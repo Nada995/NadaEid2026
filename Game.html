@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ar" dir="rtl" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>عجلة الحظ</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    * { font-family: 'Tajawal', sans-serif; }
+    html, body { height: 100%; margin: 0; }
+
+    .wheel-container {
+      position: relative;
+      display: inline-block;
+    }
+
+    .wheel-canvas {
+      transition: transform 4.2s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+    }
+
+    .pointer-arrow {
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 18px solid transparent;
+      border-right: 18px solid transparent;
+      border-top: 36px solid #fbbf24;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      z-index: 10;
+    }
+
+    .spin-btn {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      transition: all 0.2s;
+    }
+
+    .spin-btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      transform: scale(1.05);
+    }
+
+    .spin-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .result-popup {
+      animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    @keyframes sparkle {
+      0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
+      50% { opacity: 1; transform: scale(1) rotate(180deg); }
+    }
+
+    .sparkle {
+      animation: sparkle 0.8s ease-in-out;
+    }
+
+.bg-main {
+  background: linear-gradient(
+    145deg,
+    #034146 0%,   /* Emerald */
+    #281F51 35%,  /* Sapphire */
+    #23AEB7 70%,  /* Turquoise */
+    #8BC34A 100%  /* Zain Green */
+  );
+}
+  </style>
+</head>
+
+<body class="h-full">
+  <div id="app" class="bg-main h-full w-full overflow-auto flex flex-col items-center justify-center p-4 relative">
+
+    <h1 id="game-title" class="text-3xl md:text-4xl font-black text-amber-400 mb-6 text-center drop-shadow-lg">
+      🎰 عجلة الحظ
+    </h1>
+
+    <div class="wheel-container mb-6">
+      <div class="pointer-arrow"></div>
+      <canvas id="wheelCanvas" class="wheel-canvas" width="430" height="430"></canvas>
+
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-gradient-to-br from-amber-300 to-amber-600 shadow-lg flex items-center justify-center z-10 border-4 border-amber-200">
+        <span class="text-xl">🎯</span>
+      </div>
+    </div>
+
+    <button id="spinBtn" class="spin-btn text-white text-xl font-bold px-10 py-3 rounded-full shadow-xl flex items-center gap-2">
+      <i data-lucide="rotate-cw" style="width:22px;height:22px;"></i>
+      لف العجلة!
+    </button>
+
+    <div id="resultArea" class="mt-6 h-20 flex items-center justify-center"></div>
+    <div id="sparkles" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+  </div>
+
+  <script>
+const segments = [
+  { label: '😅 حظ أوفر', color: '#8BC34A' },   // Zain Green
+  { label: '😂 ارجع حاول', color: '#23AEB7' }, // Turquoise
+  { label: '🙃 شكراً لمشاركتك', color: '#281F51' }, // Sapphire
+  { label: '🤡 تقريباً فزت', color: '#AB1368' }, // Quartz
+  { label: '☕ قهوتك علينا', color: '#F6EB69' }, // Yellow (الجائزة)
+  { label: '😜 الدور الجاي لك', color: '#034146' }, // Emerald
+  { label: '📉 الحظ نازل اليوم', color: '#442C43' }, // Amethyst
+  { label: '😅 جرب مرة ثانية', color: '#5E35B1' }  // Deep Violet
+];
+
+    const canvas = document.getElementById('wheelCanvas');
+    const ctx = canvas.getContext('2d');
+    const spinBtn = document.getElementById('spinBtn');
+    const resultArea = document.getElementById('resultArea');
+
+    let currentRotation = 0;
+    let isSpinning = false;
+
+    function drawWheel() {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const r = cx - 10;
+      const arc = (2 * Math.PI) / segments.length;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 6, 0, 2 * Math.PI);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 2, 0, 2 * Math.PI);
+      ctx.fillStyle = '#1e293b';
+      ctx.fill();
+
+      segments.forEach((seg, i) => {
+        const startAngle = i * arc - Math.PI / 2;
+        const endAngle = startAngle + arc;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fillStyle = seg.color;
+        ctx.fill();
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(startAngle + arc / 2);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px Tajawal';
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 3;
+        ctx.fillText(seg.label, r - 18, 5);
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+      });
+
+      segments.forEach((_, i) => {
+        const angle = i * arc - Math.PI / 2;
+        const dotR = r - 8;
+
+        ctx.beginPath();
+        ctx.arc(
+          cx + dotR * Math.cos(angle),
+          cy + dotR * Math.sin(angle),
+          3,
+          0,
+          2 * Math.PI
+        );
+        ctx.fillStyle = '#fbbf24';
+        ctx.fill();
+      });
+    }
+
+    function getRotationForWinner(index) {
+      const segmentAngle = 360 / segments.length;
+      const centerOfSegment = index * segmentAngle + segmentAngle / 2;
+
+      // المؤشر في الأعلى، فنحتاج نخلي منتصف القطاع يقابل الأعلى
+      return 360 - centerOfSegment;
+    }
+
+    function spin() {
+      if (isSpinning) return;
+
+      isSpinning = true;
+      spinBtn.disabled = true;
+      resultArea.innerHTML = '';
+
+      let winnerIndex;
+
+      // نسبة فوز منخفضة 8%
+      if (Math.random() < 0.08) {
+        winnerIndex = 4; // قهوتك علينا
+      } else {
+        const prankIndexes = [0, 1, 2, 3, 5, 6, 7];
+        winnerIndex = prankIndexes[Math.floor(Math.random() * prankIndexes.length)];
+      }
+
+      const extraSpins = 6;
+      const targetRotation = getRotationForWinner(winnerIndex);
+      const finalRotation = currentRotation + extraSpins * 360 + targetRotation;
+
+      canvas.style.transform = `rotate(${finalRotation}deg)`;
+      currentRotation = finalRotation % 360;
+
+      setTimeout(() => {
+        showResult(segments[winnerIndex]);
+        createSparkles();
+        isSpinning = false;
+        spinBtn.disabled = false;
+      }, 4200);
+    }
+
+    function showResult(winner) {
+      const isRealPrize = winner.label.includes('قهوتك علينا');
+
+      resultArea.innerHTML = `
+        <div class="result-popup bg-white/10 backdrop-blur-sm border border-amber-400/30 rounded-2xl px-8 py-4 text-center">
+          <p class="text-amber-300 text-sm font-bold mb-1">
+            ${isRealPrize ? '🎉 مبروك! ربحت' : '😄 النتيجة'}
+          </p>
+          <p class="text-white text-2xl font-black">${winner.label}</p>
+        </div>
+      `;
+    }
+
+    function createSparkles() {
+      const container = document.getElementById('sparkles');
+      const emojis = ['✨', '🌟', '⭐', '💫', '🎉', '🎊'];
+
+      for (let i = 0; i < 12; i++) {
+        const s = document.createElement('div');
+        s.className = 'sparkle absolute text-2xl';
+        s.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        s.style.left = Math.random() * 100 + '%';
+        s.style.top = Math.random() * 100 + '%';
+        s.style.animationDelay = Math.random() * 0.5 + 's';
+        container.appendChild(s);
+
+        setTimeout(() => s.remove(), 1500);
+      }
+    }
+
+    spinBtn.addEventListener('click', spin);
+    drawWheel();
+    lucide.createIcons();
+
+    const defaultConfig = {
+      title_text: 'عجلة الحظ',
+      background_color: '#0f172a',
+      accent_color: '#fbbf24',
+      text_color: '#ffffff',
+      font_family: 'Tajawal',
+      font_size: 16
+    };
+
+    if (window.elementSdk) {
+      window.elementSdk.init({
+        defaultConfig,
+        onConfigChange: async (config) => {
+          const title = config.title_text || defaultConfig.title_text;
+          const bg = config.background_color || defaultConfig.background_color;
+          const accent = config.accent_color || defaultConfig.accent_color;
+          const font = config.font_family || defaultConfig.font_family;
+          const fontSize = config.font_size || defaultConfig.font_size;
+
+          document.getElementById('game-title').textContent = '🎰 ' + title;
+          document.getElementById('game-title').style.color = accent;
+          document.getElementById('game-title').style.fontFamily = `${font}, sans-serif`;
+          document.getElementById('game-title').style.fontSize = `${fontSize * 2}px`;
+
+          const app = document.getElementById('app');
+          app.style.background = `linear-gradient(145deg, ${bg} 0%, ${bg}dd 50%, ${bg} 100%)`;
+
+          document.querySelector('.pointer-arrow').style.borderTopColor = accent;
+        },
+        mapToCapabilities: (config) => ({
+          recolorables: [
+            {
+              get: () => config.background_color || defaultConfig.background_color,
+              set: (v) => { config.background_color = v; window.elementSdk.setConfig({ background_color: v }); }
+            },
+            {
+              get: () => config.accent_color || defaultConfig.accent_color,
+              set: (v) => { config.accent_color = v; window.elementSdk.setConfig({ accent_color: v }); }
+            },
+            {
+              get: () => config.text_color || defaultConfig.text_color,
+              set: (v) => { config.text_color = v; window.elementSdk.setConfig({ text_color: v }); }
+            }
+          ],
+          borderables: [],
+          fontEditable: {
+            get: () => config.font_family || defaultConfig.font_family,
+            set: (v) => { config.font_family = v; window.elementSdk.setConfig({ font_family: v }); }
+          },
+          fontSizeable: {
+            get: () => config.font_size || defaultConfig.font_size,
+            set: (v) => { config.font_size = v; window.elementSdk.setConfig({ font_size: v }); }
+          }
+        }),
+        mapToEditPanelValues: (config) => new Map([
+          ['title_text', config.title_text || defaultConfig.title_text]
+        ])
+      });
+    }
+  </script>
+</body>
+</html>
